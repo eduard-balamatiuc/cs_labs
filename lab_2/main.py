@@ -23,6 +23,9 @@ st.markdown("""
         .element-container {
             width: 100%;
         }
+        .stButton button {
+            width: 100%;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,6 +34,8 @@ if 'history' not in st.session_state:
     st.session_state.history = []
 if 'current_substitutions' not in st.session_state:
     st.session_state.current_substitutions = {}
+if 'temp_substitutions' not in st.session_state:
+    st.session_state.temp_substitutions = {}
 if 'frequencies' not in st.session_state:
     st.session_state.frequencies = {}
 if 'decoded_text' not in st.session_state:
@@ -70,6 +75,15 @@ def update_decoded_text():
             st.session_state.current_substitutions
         )
 
+def apply_substitutions():
+    # Update current_substitutions with valid entries from temp_substitutions
+    for letter, sub in st.session_state.temp_substitutions.items():
+        if sub and sub.isalpha():
+            st.session_state.current_substitutions[letter] = sub.upper()
+        elif sub == "":
+            st.session_state.current_substitutions.pop(letter, None)
+    update_decoded_text()
+
 def save_attempt():
     attempt = {
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -80,12 +94,12 @@ def save_attempt():
     }
     st.session_state.history.append(attempt)
     st.session_state.current_attempt_index = len(st.session_state.history) - 1
-    update_decoded_text()
 
 def load_attempt(idx):
     attempt = st.session_state.history[idx]
     st.session_state.ciphertext = attempt['ciphertext']
     st.session_state.current_substitutions = attempt['substitutions'].copy()
+    st.session_state.temp_substitutions = attempt['substitutions'].copy()
     st.session_state.frequencies = attempt['frequencies']
     st.session_state.current_attempt_index = idx
     update_decoded_text()
@@ -94,14 +108,9 @@ def on_text_change():
     if st.session_state.text_input != st.session_state.ciphertext:
         st.session_state.ciphertext = st.session_state.text_input
         st.session_state.frequencies = frequency_analysis(st.session_state.ciphertext)
+        st.session_state.current_substitutions = {}
+        st.session_state.temp_substitutions = {}
         update_decoded_text()
-
-def on_substitution_change(letter, new_value):
-    if new_value and new_value.isalpha():
-        st.session_state.current_substitutions[letter] = new_value.upper()
-    elif new_value == "":
-        st.session_state.current_substitutions.pop(letter, None)
-    update_decoded_text()
 
 st.title("Monoalphabetic Cipher - Frequency Analysis")
 
@@ -126,40 +135,83 @@ with col2:
         freq_df.columns = ['Frequency (%)']
         st.dataframe(freq_df, height=300)
 
-        if st.button("Auto-substitute", use_container_width=True):
-            for letter in sorted(st.session_state.frequencies.keys()):
-                closest = min(letter_frequencies, 
-                            key=lambda x: abs(letter_frequencies[x] - st.session_state.frequencies[letter]))
-                st.session_state.current_substitutions[letter] = closest
-            update_decoded_text()
+        col_auto, col_clear = st.columns(2)
+        with col_auto:
+            if st.button("Auto-substitute", use_container_width=True):
+                st.session_state.temp_substitutions = {}
+                for letter in sorted(st.session_state.frequencies.keys()):
+                    closest = min(letter_frequencies, 
+                                key=lambda x: abs(letter_frequencies[x] - st.session_state.frequencies[letter]))
+                    st.session_state.temp_substitutions[letter] = closest
+                apply_substitutions()
+        
+        with col_clear:
+            if st.button("Clear All", use_container_width=True):
+                st.session_state.current_substitutions = {}
+                st.session_state.temp_substitutions = {}
+                update_decoded_text()
 
 with col3:
     # Decoded Text Section
     if st.session_state.decoded_text:
-        st.text_area(
-            "Decoded Text:",
-            value=st.session_state.decoded_text,
-            height=300,
-            disabled=True,
-            key="decoded_output"
+        st.code(
+            st.session_state.decoded_text,
+            language="plaintext",
         )
+        
+
 
 # Substitutions Section
 if st.session_state.frequencies:
     st.subheader("Letter Substitutions")
-    cols = st.columns(13)  # More columns for better space usage
-    for idx, letter in enumerate(sorted(st.session_state.frequencies.keys())):
-        col_idx = idx % 13
-        with cols[col_idx]:
-            current_value = st.session_state.current_substitutions.get(letter, '')
-            new_value = st.text_input(
-                f"'{letter}'",
-                value=current_value,
-                key=f"sub_{letter}",
-                max_chars=1,
-                on_change=on_substitution_change,
-                args=(letter, current_value)
-            ).upper()
+    
+    # Create a tabbed interface for substitutions
+    tab1, tab2 = st.tabs(["Grid View", "Table View"])
+    
+    with tab1:
+        # Grid view of substitutions
+        cols = st.columns(13)
+        for idx, letter in enumerate(sorted(st.session_state.frequencies.keys())):
+            col_idx = idx % 13
+            with cols[col_idx]:
+                current_value = st.session_state.temp_substitutions.get(letter, 
+                    st.session_state.current_substitutions.get(letter, ''))
+                new_value = st.text_input(
+                    f"'{letter}'",
+                    value=current_value,
+                    key=f"sub_{letter}",
+                    max_chars=1
+                ).upper()
+                st.session_state.temp_substitutions[letter] = new_value
+    
+    with tab2:
+        # Table view of substitutions
+        col_pairs = st.columns(4)
+        for i in range(0, len(st.session_state.frequencies), 4):
+            for j in range(4):
+                if i + j < len(sorted(st.session_state.frequencies.keys())):
+                    with col_pairs[j]:
+                        letter = sorted(st.session_state.frequencies.keys())[i + j]
+                        current_value = st.session_state.temp_substitutions.get(letter, 
+                            st.session_state.current_substitutions.get(letter, ''))
+                        new_value = st.text_input(
+                            f"'{letter}' → ?",
+                            value=current_value,
+                            key=f"sub_table_{letter}",
+                            max_chars=1
+                        ).upper()
+                        st.session_state.temp_substitutions[letter] = new_value
+
+    # Apply substitutions button
+    col_apply, col_revert = st.columns(2)
+    with col_apply:
+        if st.button("Apply Substitutions", use_container_width=True):
+            apply_substitutions()
+    
+    with col_revert:
+        if st.button("Revert Changes", use_container_width=True):
+            st.session_state.temp_substitutions = st.session_state.current_substitutions.copy()
+            update_decoded_text()
 
 # Action buttons in a row
 col_save, col_export, col_import = st.columns([1, 1, 1])
@@ -182,7 +234,9 @@ with col_export:
 with col_import:
     uploaded_file = st.file_uploader("Import Substitutions", type="json")
     if uploaded_file is not None:
-        st.session_state.current_substitutions = json.load(uploaded_file)
+        imported_subs = json.load(uploaded_file)
+        st.session_state.current_substitutions = imported_subs
+        st.session_state.temp_substitutions = imported_subs.copy()
         update_decoded_text()
         st.success("Substitutions imported successfully!")
 
