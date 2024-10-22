@@ -112,6 +112,22 @@ def on_text_change():
         st.session_state.temp_substitutions = {}
         update_decoded_text()
 
+def auto_substitute():
+    st.session_state.temp_substitutions = {}
+    sorted_cipher_freq = sorted(st.session_state.frequencies.items(), key=lambda x: x[1], reverse=True)
+    sorted_english_freq = sorted(letter_frequencies.items(), key=lambda x: x[1], reverse=True)
+    
+    assigned_letters = set()
+    
+    for cipher_letter, _ in sorted_cipher_freq:
+        for english_letter, _ in sorted_english_freq:
+            if english_letter not in assigned_letters:
+                st.session_state.temp_substitutions[cipher_letter] = english_letter
+                assigned_letters.add(english_letter)
+                break
+    
+    apply_substitutions()
+
 st.title("Monoalphabetic Cipher - Frequency Analysis")
 
 # Create three columns for main layout
@@ -138,12 +154,7 @@ with col2:
         col_auto, col_clear = st.columns(2)
         with col_auto:
             if st.button("Auto-substitute", use_container_width=True):
-                st.session_state.temp_substitutions = {}
-                for letter in sorted(st.session_state.frequencies.keys()):
-                    closest = min(letter_frequencies, 
-                                key=lambda x: abs(letter_frequencies[x] - st.session_state.frequencies[letter]))
-                    st.session_state.temp_substitutions[letter] = closest
-                apply_substitutions()
+                auto_substitute()
         
         with col_clear:
             if st.button("Clear All", use_container_width=True):
@@ -168,10 +179,16 @@ if st.session_state.frequencies:
     # Create a tabbed interface for substitutions
     tab1, tab2 = st.tabs(["Grid View", "Table View"])
     
+    # Ensure all alphabet letters are present
+    all_letters = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    cipher_letters = set(st.session_state.frequencies.keys())
+    all_letters.update(cipher_letters)
+    sorted_letters = sorted(all_letters)
+
     with tab1:
         # Grid view of substitutions
         cols = st.columns(13)
-        for idx, letter in enumerate(sorted(st.session_state.frequencies.keys())):
+        for idx, letter in enumerate(sorted_letters):
             col_idx = idx % 13
             with cols[col_idx]:
                 current_value = st.session_state.temp_substitutions.get(letter, 
@@ -187,11 +204,11 @@ if st.session_state.frequencies:
     with tab2:
         # Table view of substitutions
         col_pairs = st.columns(4)
-        for i in range(0, len(st.session_state.frequencies), 4):
+        for i in range(0, len(sorted_letters), 4):
             for j in range(4):
-                if i + j < len(sorted(st.session_state.frequencies.keys())):
+                if i + j < len(sorted_letters):
                     with col_pairs[j]:
-                        letter = sorted(st.session_state.frequencies.keys())[i + j]
+                        letter = sorted_letters[i + j]
                         current_value = st.session_state.temp_substitutions.get(letter, 
                             st.session_state.current_substitutions.get(letter, ''))
                         new_value = st.text_input(
